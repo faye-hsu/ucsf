@@ -23,7 +23,7 @@ def polygons_to_mask(shapes, size, label):
     mask = Image.new("L", size, 0)
     draw = ImageDraw.Draw(mask)
     for shape in shapes:
-        if shape["label"] != label:
+        if shape["label"].lower() != label.lower():
             continue
         points = [tuple(p) for p in shape["points"]]
         draw.polygon(points, fill=255)
