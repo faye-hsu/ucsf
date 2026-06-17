@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 import pandas as pd
 import torch
+from scipy.ndimage import binary_fill_holes
 
 from model import build_model
 
@@ -17,9 +18,20 @@ from model import build_model
 def preprocess(image, image_size):
     h, w = image.shape
     resized = cv2.resize(image, (image_size, image_size), interpolation=cv2.INTER_LINEAR)
+    clahe = cv2.createCLAHE(clipLimit=4.0, tileGridSize=(8, 8))
+    resized = clahe.apply(resized)
     norm = (resized.astype(np.float32) / 255.0 - 0.5) / 0.5
     tensor = torch.from_numpy(norm).unsqueeze(0).unsqueeze(0).float()
     return tensor, (h, w)
+
+
+def fill_cyst_holes(pred):
+    cyst_mask = pred == 2
+    filled = binary_fill_holes(cyst_mask)
+    new_cyst = filled & (pred != 2)
+    pred = pred.copy()
+    pred[new_cyst] = 2
+    return pred
 
 
 def predict_mask(model, image, image_size, device):
@@ -28,14 +40,15 @@ def predict_mask(model, image, image_size, device):
         logits = model(tensor.to(device))
         pred = torch.argmax(logits, dim=1).squeeze(0).cpu().numpy().astype(np.uint8)
     pred = cv2.resize(pred, (w, h), interpolation=cv2.INTER_NEAREST)
-    return pred  # 0=background, 1=non-cystic, 2=cystic
+    pred = fill_cyst_holes(pred)
+    return pred
 
 
 def overlay_mask(image, pred):
     color = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
     overlay = color.copy()
-    overlay[pred == 1] = (0, 200, 0)      # non-cystic: green
-    overlay[pred == 2] = (0, 0, 255)      # cystic: red
+    overlay[pred == 1] = (0, 200, 0)
+    overlay[pred == 2] = (0, 0, 255)
     return cv2.addWeighted(color, 0.6, overlay, 0.4, 0)
 
 
