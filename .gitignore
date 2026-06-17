@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+checkpoints/*.pt
+data/images/*
+data/val_images/*
+data/annotations/*
+data/masks/*
+data/val_masks/*
+results/*
+!data/images/.gitkeep
+!data/val_images/.gitkeep
+!data/annotations/.gitkeep
+!data/masks/.gitkeep
+!data/val_masks/.gitkeep
+!results/.gitkeep
+!checkpoints/.gitkeep
+!checkpoints/best_model.pt
