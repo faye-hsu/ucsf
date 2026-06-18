@@ -34,6 +34,65 @@ def fill_cyst_holes(pred):
     return pred
 
 
+def circularity(contour):
+    area = cv2.contourArea(contour)
+    perimeter = cv2.arcLength(contour, True)
+    if perimeter == 0:
+        return 0
+    return 4 * np.pi * area / (perimeter ** 2)
+
+
+def has_dark_border(image_gray, mask, border_width=6, darkness_threshold=0.85):
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (border_width * 2 + 1, border_width * 2 + 1))
+    dilated = cv2.dilate(mask.astype(np.uint8), kernel)
+    border_ring = (dilated - mask.astype(np.uint8)).astype(bool)
+    if not border_ring.any():
+        return False
+    inner_mean = image_gray[mask].mean() if mask.any() else 255
+    border_mean = image_gray[border_ring].mean()
+    return border_mean < inner_mean * darkness_threshold
+
+
+def clean_prediction(pred, image_gray, image_area):
+    cleaned = pred.copy()
+    min_organoid_area = image_area * 0.001
+    min_cyst_area = image_area * 0.0005
+    min_circularity = 0.45
+
+    organoid_mask = (pred > 0).astype(np.uint8)
+    n_labels, labels, stats, _ = cv2.connectedComponentsWithStats(organoid_mask, connectivity=8)
+    clean_organoid = np.zeros_like(organoid_mask)
+    for i in range(1, n_labels):
+        if stats[i, cv2.CC_STAT_AREA] >= min_organoid_area:
+            clean_organoid[labels == i] = 1
+
+    cleaned[clean_organoid == 0] = 0
+
+    cyst_mask = (cleaned == 2).astype(np.uint8)
+    n_labels, labels, stats, _ = cv2.connectedComponentsWithStats(cyst_mask, connectivity=8)
+    clean_cyst = np.zeros_like(cyst_mask)
+
+    for i in range(1, n_labels):
+        area = stats[i, cv2.CC_STAT_AREA]
+        if area < min_cyst_area:
+            continue
+        blob = (labels == i)
+        contours, _ = cv2.findContours(blob.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            continue
+        circ = circularity(contours[0])
+        if circ < min_circularity:
+            continue
+        if not has_dark_border(image_gray, blob):
+            continue
+        clean_cyst[blob] = 1
+
+    result = np.zeros_like(pred)
+    result[clean_organoid == 1] = 1
+    result[clean_cyst == 1] = 2
+    return result
+
+
 def predict_mask(model, image, image_size, device):
     tensor, (h, w) = preprocess(image, image_size)
     with torch.no_grad():
@@ -41,6 +100,7 @@ def predict_mask(model, image, image_size, device):
         pred = torch.argmax(logits, dim=1).squeeze(0).cpu().numpy().astype(np.uint8)
     pred = cv2.resize(pred, (w, h), interpolation=cv2.INTER_NEAREST)
     pred = fill_cyst_holes(pred)
+    pred = clean_prediction(pred, image, h * w)
     return pred
 
 
@@ -97,7 +157,7 @@ def main():
     df = pd.DataFrame(rows)
     df.to_csv(out_dir / "area_summary.csv", index=False)
     print(df)
-    print(f"\nSaved per-image overlays to {out_dir / 'overlays'} and summary to {out_dir / 'area_summary.csv'}")
+    print(f"\nSaved overlays to {out_dir / 'overlays'} and summary to {out_dir / 'area_summary.csv'}")
 
 
 if __name__ == "__main__":

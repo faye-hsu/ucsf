@@ -17,7 +17,7 @@ def get_train_transform(image_size=512):
         A.RandomGamma(gamma_limit=(80, 120), p=0.5),
         A.GaussNoise(p=0.3),
         A.GaussianBlur(blur_limit=(3, 7), p=0.3),
-        A.ElasticTransform(alpha=120, sigma=6, p=0.5),
+        A.ElasticTransform(alpha=60, sigma=6, p=0.3),
         A.CLAHE(clip_limit=4.0, tile_grid_size=(8, 8), p=0.5),
         A.Normalize(mean=(0.5,), std=(0.5,)),
         ToTensorV2(),
